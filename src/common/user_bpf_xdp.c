@@ -10,7 +10,7 @@
 #include <linux/if_link.h> /* Need XDP flags */
 #include <linux/err.h>
 
-#include "./headers/common_defines.h"
+#include "../headers/common_defines.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX	4096

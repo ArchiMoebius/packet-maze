@@ -1,4 +1,4 @@
-/* 
+/*
  * Common struct for level info
  */
 #ifndef __XDP_LEVEL_USER_H
