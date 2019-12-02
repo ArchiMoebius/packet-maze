@@ -14,12 +14,7 @@
 #include <bpf/bpf_endian.h>
 
 #include "../headers/xdp_level_user.h"
-
-/* Header cursor to keep track of current parsing position */
-struct hdr_cursor
-{
-	void *pos;
-};
+#include "../headers/packet_parsers.h"
 
 struct bpf_map_def SEC("maps") ipv4hashmap = {
 	.type = BPF_MAP_TYPE_PERCPU_HASH,
@@ -28,8 +23,6 @@ struct bpf_map_def SEC("maps") ipv4hashmap = {
 	.max_entries = 1000,						/* enough :-?      */
 	.map_flags = BPF_F_NO_PREALLOC,
 };
-
-#define DEBUG 1
 
 #ifdef DEBUG
 /* Only use this for debug output. Notice output from bpf_trace_printk()
@@ -47,47 +40,6 @@ struct bpf_map_def SEC("maps") ipv4hashmap = {
 	}                       \
 	while (0)
 #endif
-
-static __always_inline int parse_ethhdr(
-	struct hdr_cursor *nh,
-	void *data_end,
-	struct ethhdr **ethhdr)
-{
-	struct ethhdr *eth = nh->pos;
-	int hdrsize = sizeof(*eth);
-
-	if (nh->pos + hdrsize > data_end)
-		return -1;
-
-	nh->pos += hdrsize;
-	*ethhdr = eth;
-
-	//bpf_debug("Debug: eth_type:0x%x\n", bpf_ntohs(eth->h_proto));
-
-	return eth->h_proto;
-}
-
-static __always_inline int parse_ip4hdr(
-	struct hdr_cursor *nh,
-	void *data_end,
-	struct iphdr **ip4hdr)
-{
-	struct iphdr *iph = nh->pos;
-	int hdrsize;
-
-	if (iph + 1 > data_end)
-		return -1;
-
-	hdrsize = iph->ihl * 4;
-
-	if (nh->pos + hdrsize > data_end)
-		return -1;
-
-	nh->pos += hdrsize;
-	*ip4hdr = iph;
-
-	return (*ip4hdr)->protocol;
-}
 
 SEC("xdp_packet_trainer")
 int xdp_main(struct xdp_md *ctx)

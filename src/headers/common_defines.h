@@ -34,5 +34,6 @@ extern int verbose;
 #define EXIT_FAIL_OPTION	 2
 #define EXIT_FAIL_XDP		30
 #define EXIT_FAIL_BPF		40
+#define DEBUG 0
 
 #endif /* __COMMON_DEFINES_H */
