@@ -6,9 +6,9 @@
 
 struct userLevelInfo
 {
-    __u64 rx_packets;
-    __u32 key;
-    __u32 level;
+        __u64 rx_packets;
+        __u32 key;
+        __u32 level;
 };
 
 #endif /* __XDP_LEVEL_USER_H */

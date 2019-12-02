@@ -24,11 +24,11 @@
 #include "../headers/xdp_level_user.h"
 
 const struct bpf_map_info ipv4hashmap = {
-	.type = BPF_MAP_TYPE_PERCPU_HASH,
-	.key_size = sizeof(__u32),					/* IPv4 Address    */
-	.value_size = sizeof(struct userLevelInfo), /* Level struct    */
-	.max_entries = 1000,						/* enough :-?      */
-	.map_flags = BPF_F_NO_PREALLOC,
+ .type = BPF_MAP_TYPE_PERCPU_HASH,
+ .key_size = sizeof(__u32),     /* IPv4 Address    */
+ .value_size = sizeof(struct userLevelInfo), /* Level struct    */
+ .max_entries = 1000,      /* enough :-?      */
+ .map_flags = BPF_F_NO_PREALLOC,
 };
 
 struct bpf_map_info info = { 0 };
@@ -51,11 +51,11 @@ int main() {
 
   int nr_cpus = libbpf_num_possible_cpus();
 
-	if (nr_cpus < 0) {
-		printf("Failed to get # of possible cpus: '%s'!\n",
-		       strerror(-nr_cpus));
-		exit(1);
-	}
+ if (nr_cpus < 0) {
+  printf("Failed to get # of possible cpus: '%s'!\n",
+         strerror(-nr_cpus));
+  exit(1);
+ }
 
   struct userLevelInfo values[nr_cpus];
 
@@ -70,15 +70,15 @@ int main() {
         printf("Got key 0x%x\n", key);
         res = bpf_map_lookup_elem(fd, &key, (void*)values);
         if(res == 0) {
-          	/* Get values from each CPU */
-          	for (i = 0; i < nr_cpus; i++) {
+           /* Get values from each CPU */
+           for (i = 0; i < nr_cpus; i++) {
               printf(
                 "rxPackets: %u %u %llu\n",
                 values[i].key,
                 values[i].level,
                 values[i].rx_packets
               );
-          	}
+           }
             //bpf_map_delete_elem(fd, &key);
         }
         key = next_key;
