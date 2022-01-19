@@ -1,0 +1,11 @@
+{
+  "branch": "master",
+  "description": "Exploration of eBPF in C and Python with the initial intent of creating a CTF style packet parser with an in-kernel map which userspace could monitor for score",
+  "title": "Packet-Maze",
+  "links": [
+    {
+      "title": "View Source",
+      "href": "https://github.com/ArchiMoebius/packet-maze"
+    }
+  ]
+}
