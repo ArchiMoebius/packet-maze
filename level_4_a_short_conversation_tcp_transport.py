@@ -4,7 +4,7 @@ from sys import argv
 
 from scapy.compat import raw
 from scapy.layers.inet import IP, TCP
-from scapy.sendrecv import sr1
+from scapy.sendrecv import sr1, sr
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args(argv[1:])
     sport = randint(1024, 65535)
-    dport = 80
+    dport = 55555
 
     ip_packet = IP(dst=args.ip, flags="DF")
     tcp_syn_packet = TCP(dport=dport, sport=sport, flags="S")
@@ -50,6 +50,6 @@ if __name__ == "__main__":
         packet.show2()
         print(f"The raw ACK packet:\n{raw(packet)}")
 
-        sr1(packet, timeout=5).show2()
+        sr(packet, timeout=5)
     else:
         print("Failed you did, do again you must")

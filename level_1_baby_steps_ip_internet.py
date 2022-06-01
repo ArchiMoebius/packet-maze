@@ -16,11 +16,19 @@ if __name__ == "__main__":
         required=True,
     )
 
+    parser.add_argument(
+        "-u",
+        "--username",
+        help="The username you want to register under",
+        type=str,
+        required=True,
+    )
+
     args = parser.parse_args(argv[1:])
 
     packet = IP(flags="evil", dst=args.ip)
 
-    packet.add_payload(b"haxor")
+    packet.add_payload(bytes(args.username, "utf8"))
 
     packet.show2()
 
