@@ -1,20 +1,35 @@
-import socket
-import time
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-from ctypes import c_int64, c_ubyte
-from sys import stdout, exit
+"""
+    Packet Maze - this script is the entry point and user space presentation layer for
+    the packet_maze.c eBPF filters which are leveraged to create an interactive training
+    tool for budding network programming enthousiast's.
+"""
+
+import socket
+
+from ctypes import c_int64
+from os import system
+from sys import exit
 from threading import Thread
+from time import sleep, time
 
 from scapy.compat import raw
 from scapy.layers.inet import IP
 from scapy.layers.l2 import Ether
 
-from bcc import BPF  # 1
-from bcc.utils import printb
+from bcc import BPF
 
-MAX_AGE_SECONDS = 5
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn
+from rich.table import Table
+from rich.style import Style
+
 
 HK_TO_NAME = {}
+HK_TO_TASK_ID = {}
 
 
 def get_eth_key(eth):
@@ -71,7 +86,7 @@ def tcp_level():
         while True:
             try:
                 sock, addr = tcpserver.accept()
-                print(addr, sock.recv(32))
+                # print(addr, sock.recv(32))
             except Exception:
                 pass
             finally:
@@ -81,11 +96,71 @@ def tcp_level():
 tcp_server_thread = Thread(target=tcp_level, daemon=True)
 tcp_server_thread.start()
 
-# cleanup function
-def cleanup():
-    current_time = int(time.time())
+job_progress = Progress(
+    "{task.description}",
+    BarColumn(
+        style=Style(italic=True, dim=True, color="black"),
+        complete_style=Style(italic=True, dim=True, color="green"),
+        bar_width=100,
+    ),
+    TextColumn("{task.fields[level]}"),
+    expand=True,
+)
+
+progress_table = Table.grid(expand=True)
+progress_table.add_row(
+    Panel(
+        job_progress,
+        title="[b]Competitor Progress",
+        border_style="green",
+        padding=(1, 2),
+        expand=True,
+    ),
+)
+
+
+def render_player_table():
+    global HK_TO_TASK_ID
+    global HK_TO_NAME
 
     for key, leaf in bpf_sessions.items():
+
+        player_task_id = HK_TO_TASK_ID.get(key.value, "false")
+        name = HK_TO_NAME.get(key.value, "🐧")
+
+        if player_task_id == "false":
+            HK_TO_TASK_ID[key.value] = job_progress.add_task(
+                f"[white]{name} (#{key.value})", total=5, level=f"Level {leaf.level}"
+            )
+        else:
+            job = job_progress._tasks.get(player_task_id, False)
+
+            if job and not job.finished:
+
+                while int(job.fields["level"].split(" ")[-1]) < int(leaf.level):
+                    job_progress.advance(job.id)
+                    level = f"Level {leaf.level}"
+
+                    if leaf.level > job.total:
+                        level = "Done!"
+
+                    job_progress.update(
+                        job.id,
+                        description=f"[white]{name} (#{key.value})",
+                        level=level,
+                    )
+
+                    if leaf.level > job.total:
+                        job.finished_time = True
+                        break
+
+
+# cleanup function
+def cleanup():
+    global HK_TO_TASK_ID
+    current_time = int(time())
+
+    for key, _ in bpf_sessions.items():
         try:
             current_leaf = bpf_sessions[key]
             # set timestamp if timestamp == 0
@@ -96,6 +171,11 @@ def cleanup():
                 # delete older entries
                 if current_time - current_leaf.timestamp > current_leaf.lifespan:
                     del bpf_sessions[key]
+                    player_task_id = HK_TO_TASK_ID.get(key.value, False)
+
+                    if player_task_id:
+                        job_progress.remove_task(player_task_id)
+                        del HK_TO_TASK_ID[key.value]
         except:
             print("cleanup exception.")
     return
@@ -103,47 +183,43 @@ def cleanup():
 
 bpf_sessions = b.get_table("sessions")
 
+system("reset")
+
 try:
-    while True:
+    with Live(progress_table, refresh_per_second=10):
+        while True:
 
-        try:
-            packet = Ether(sock.recv(ETH_FRAME_LEN))
+            try:
+                packet = Ether(sock.recv(ETH_FRAME_LEN))
 
-            hk = get_eth_key(packet[Ether])
+                hk = get_eth_key(packet[Ether])
 
-            player = bpf_sessions.get(c_int64(hk), False)
+                player = bpf_sessions.get(c_int64(hk), False)
 
-            if player:
+                if player:
 
-                if IP in packet and packet.payload and player.level == 2:
-                    # player.name = (c_ubyte * 11).from_buffer_copy(
-                    #    raw(packet[IP].payload[0:10]) + b"\x00"
-                    # )
+                    if IP in packet and packet.payload and player.level == 2:
+                        # player.name = (c_ubyte * 11).from_buffer_copy(
+                        #    raw(packet[IP].payload[0:10]) + b"\x00"
+                        # )
 
-                    HK_TO_NAME[hk] = bytes(
-                        raw(packet[IP].payload[0:10]) + b"\x00"
-                    ).decode("utf8")
+                        HK_TO_NAME[hk] = bytes(
+                            raw(packet[IP].payload[0:10]) + b"\x00"
+                        ).decode("utf8")
 
-        except socket.timeout:
-            stdout.write(".")
-            pass
+            except socket.timeout:
+                pass
 
-        for key, leaf in bpf_sessions.items():
-            print(
-                "Player: ",
-                key.value,
-                leaf.level,
-                leaf.lifespan,
-                HK_TO_NAME.get(key.value, "Nooby"),
-            )
+            render_player_table()
+            cleanup()
 
-        cleanup()
+            sleep(0)
 
-except KeyboardInterrupt:  # 7
+except KeyboardInterrupt:
     pass
 
 sock.close()
-b.remove_xdp(interface, 0)  # 11
+b.remove_xdp(interface, 0)
 cleanup()
 
 try:

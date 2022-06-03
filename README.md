@@ -1,5 +1,7 @@
 # Packet-Maze
 
+An interactive training tool for budding network programming enthousiast's!
+    
 Are you a packet wizard? How's your packet craft? Find out with this interactive trainer!
 
 Start off by doing a little setup (skip if you know what you're doing)
@@ -35,3 +37,9 @@ Finish by leveraging a well known application level protocol - **HTTP** - comple
 ## Setup
 
 * https://github.com/iovisor/bcc/blob/master/INSTALL.md
+
+## TODO
+    * dockerize the thing?
+    * clean up the python script?
+    * clean up the c code?
+        * include file?
