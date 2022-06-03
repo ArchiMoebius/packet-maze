@@ -9,15 +9,12 @@
 
 import socket
 
+from argparse import ArgumentParser
 from ctypes import c_int64
 from os import system
-from sys import exit
+from sys import exit, argv
 from threading import Thread
 from time import sleep, time
-
-from scapy.compat import raw
-from scapy.layers.inet import IP
-from scapy.layers.l2 import Ether
 
 from bcc import BPF
 
@@ -27,54 +24,35 @@ from rich.progress import Progress, BarColumn, TextColumn
 from rich.table import Table
 from rich.style import Style
 
+from scapy.compat import raw
+from scapy.layers.inet import IP
+from scapy.layers.l2 import Ether
+
+
+ETH_P_ALL = 3
+ETH_FRAME_LEN = 1514  # Max. octets in frame sans FCS
 
 HK_TO_NAME = {}
 HK_TO_TASK_ID = {}
 
 
+def calculate(s, v):
+    c = 0
+    for i in range(0, len(s), 2):
+        v ^= int(int.from_bytes(bytes.fromhex(s[i] + s[i + 1]), "big") * c)
+        c += 1
+
+    return v
+
+
 def get_eth_key(eth):
-
-    hk = 9001
-
-    def calculate(s, v):
-        c = 0
-        for i in range(0, len(s), 2):
-            v ^= int(int.from_bytes(bytes.fromhex(s[i] + s[i + 1]), "big") * c)
-            c += 1
-
-        return v
-
-    return calculate(eth.dst.replace(":", ""), calculate(eth.src.replace(":", ""), hk))
-
-
-interface = "enp9s0"
-
-b = BPF(src_file="packet_maze.c")
-
-b.remove_xdp(interface, 0)
-
-# XDP 'filter'
-fn = b.load_func("packet_maze_xdp", BPF.XDP)
-b.attach_xdp(interface, fn, 0)
-
-# socket filter
-bpf_func_filter = b.load_func("packet_maze_socket_filter", BPF.SOCKET_FILTER)
-
-# create raw socket, bind it to interface
-# attach bpf program to socket created
-BPF.attach_raw_socket(bpf_func_filter, interface)
-
-# get file descriptor of the socket previously
-# created inside BPF.attach_raw_socket
-socket_fd = bpf_func_filter.sock
-
-ETH_P_ALL = 3
-ETH_FRAME_LEN = 1514  # Max. octets in frame sans FCS
-sock = socket.fromfd(socket_fd, socket.AF_PACKET, socket.SOCK_RAW, socket.IPPROTO_IP)
-
-# set it as blocking socket
-sock.setblocking(True)
-sock.settimeout(1)
+    return calculate(
+        eth.dst.replace(":", ""),
+        calculate(
+            eth.src.replace(":", ""),
+            9001,
+        ),
+    )
 
 
 def tcp_level():
@@ -93,33 +71,7 @@ def tcp_level():
                 sock.close()
 
 
-tcp_server_thread = Thread(target=tcp_level, daemon=True)
-tcp_server_thread.start()
-
-job_progress = Progress(
-    "{task.description}",
-    BarColumn(
-        style=Style(italic=True, dim=True, color="black"),
-        complete_style=Style(italic=True, dim=True, color="green"),
-        bar_width=100,
-    ),
-    TextColumn("{task.fields[level]}"),
-    expand=True,
-)
-
-progress_table = Table.grid(expand=True)
-progress_table.add_row(
-    Panel(
-        job_progress,
-        title="[b]Competitor Progress",
-        border_style="green",
-        padding=(1, 2),
-        expand=True,
-    ),
-)
-
-
-def render_player_table():
+def render_player_table(bpf_sessions, job_progress):
     global HK_TO_TASK_ID
     global HK_TO_NAME
 
@@ -155,8 +107,7 @@ def render_player_table():
                         break
 
 
-# cleanup function
-def cleanup():
+def cleanup(bpf_sessions, job_progress):
     global HK_TO_TASK_ID
     current_time = int(time())
 
@@ -181,50 +132,111 @@ def cleanup():
     return
 
 
-bpf_sessions = b.get_table("sessions")
+if __name__ == "__main__":
 
-system("reset")
+    parser = ArgumentParser()
 
-try:
-    with Live(progress_table, refresh_per_second=10):
-        while True:
+    parser.add_argument(
+        "--iface",
+        help="The Interface on which to yeet packets (eth0)",
+        type=str,
+        required=True,
+    )
 
-            try:
-                packet = Ether(sock.recv(ETH_FRAME_LEN))
+    args = parser.parse_args(argv[1:])
 
-                hk = get_eth_key(packet[Ether])
+    pm_bpf_handle = BPF(src_file="packet_maze.c")
 
-                player = bpf_sessions.get(c_int64(hk), False)
+    pm_bpf_handle.remove_xdp(args.iface, 0)
 
-                if player:
+    # XDP 'filter'
+    pm_xdp = pm_bpf_handle.load_func("packet_maze_xdp", BPF.XDP)
+    pm_bpf_handle.attach_xdp(args.iface, pm_xdp, 0)
 
-                    if IP in packet and packet.payload and player.level == 2:
-                        # player.name = (c_ubyte * 11).from_buffer_copy(
-                        #    raw(packet[IP].payload[0:10]) + b"\x00"
-                        # )
+    # socket filter
+    pm_sock_filter = pm_bpf_handle.load_func(
+        "packet_maze_socket_filter", BPF.SOCKET_FILTER
+    )
 
-                        HK_TO_NAME[hk] = bytes(
-                            raw(packet[IP].payload[0:10]) + b"\x00"
-                        ).decode("utf8")
+    BPF.attach_raw_socket(pm_sock_filter, args.iface)
 
-            except socket.timeout:
-                pass
+    pm_filtered_raw_socket = socket.fromfd(
+        pm_sock_filter.sock, socket.AF_PACKET, socket.SOCK_RAW, socket.IPPROTO_IP
+    )
 
-            render_player_table()
-            cleanup()
+    # set it as blocking socket
+    pm_filtered_raw_socket.setblocking(True)
+    pm_filtered_raw_socket.settimeout(1)
 
-            sleep(0)
+    tcp_server_thread = Thread(target=tcp_level, daemon=True)
+    tcp_server_thread.start()
 
-except KeyboardInterrupt:
-    pass
+    job_progress = Progress(
+        "{task.description}",
+        BarColumn(
+            style=Style(italic=True, dim=True, color="black"),
+            complete_style=Style(italic=True, dim=True, color="green"),
+            bar_width=100,
+        ),
+        TextColumn("{task.fields[level]}"),
+        expand=True,
+    )
 
-sock.close()
-b.remove_xdp(interface, 0)
-cleanup()
+    progress_table = Table.grid(expand=True)
+    progress_table.add_row(
+        Panel(
+            job_progress,
+            title="[b]Competitor Progress",
+            border_style="green",
+            padding=(1, 2),
+            expand=True,
+        ),
+    )
 
-try:
-    tcp_server_thread.join(timeout=3)
-except RuntimeError:
-    pass
+    bpf_sessions = pm_bpf_handle.get_table("sessions")
 
-exit(0)
+    system("reset")
+
+    try:
+        with Live(progress_table, refresh_per_second=10):
+            while True:
+
+                try:
+                    packet = Ether(pm_filtered_raw_socket.recv(ETH_FRAME_LEN))
+
+                    hk = get_eth_key(packet[Ether])
+
+                    player = bpf_sessions.get(c_int64(hk), False)
+
+                    if player:
+
+                        if IP in packet and packet.payload and player.level == 2:
+                            # player.name = (c_ubyte * 11).from_buffer_copy(
+                            #    raw(packet[IP].payload[0:10]) + b"\x00"
+                            # )
+
+                            HK_TO_NAME[hk] = bytes(
+                                raw(packet[IP].payload[0:10]) + b"\x00"
+                            ).decode("utf8")
+
+                except socket.timeout:
+                    pass
+
+                render_player_table(bpf_sessions, job_progress)
+                cleanup(bpf_sessions, job_progress)
+
+                sleep(0)
+
+    except KeyboardInterrupt:
+        pass
+
+    pm_filtered_raw_socket.close()
+    pm_bpf_handle.remove_xdp(args.iface, 0)
+    cleanup(bpf_sessions, job_progress)
+
+    try:
+        tcp_server_thread.join(timeout=3)
+    except RuntimeError:
+        pass
+
+    exit(0)

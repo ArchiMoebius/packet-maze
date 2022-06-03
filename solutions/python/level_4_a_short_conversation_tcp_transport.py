@@ -10,9 +10,8 @@ if __name__ == "__main__":
     parser = ArgumentParser()
 
     parser.add_argument(
-        "-i",
         "--ip",
-        help="The Destination IP address provided by the instructor",
+        help="The Destination IP address provided by the instructor (192.168.1.1)",
         type=str,
         required=True,
     )
