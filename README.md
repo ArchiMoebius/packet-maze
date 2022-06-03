@@ -39,6 +39,7 @@ Finish by leveraging a well known application level protocol - **HTTP** - comple
 * https://github.com/iovisor/bcc/blob/master/INSTALL.md
 
 ## TODO
+    * remove hardcoded interface / ips
     * dockerize the thing?
     * clean up the python script?
     * clean up the c code?
