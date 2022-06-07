@@ -36,10 +36,10 @@ Finish by leveraging a well known application level protocol - **HTTP** - comple
 
 ## Setup
 
+Find your OS and follow their installation guide - it's fantastic:
+
 * https://github.com/iovisor/bcc/blob/master/INSTALL.md
 
-## TODO
-    * dockerize the thing?
-    * clean up the python script?
-    * clean up the c code?
-        * include file?
+## Docker
+
+No - it's another layer of silly - you have to expose sys/modules and install the same kernel headers for docker to insert the module anyways - why do that? Open an Issue if you've a great reason.
