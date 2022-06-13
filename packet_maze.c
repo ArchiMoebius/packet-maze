@@ -156,8 +156,7 @@ static inline int parse_icmp_packet(struct xdp_md *ctx, u64 *hk,
       struct icmp_data_t *icmpdata = (void *)icmp + sizeof(*icmp);
       if ((void *)icmpdata + sizeof(*icmpdata) <= data_end) {
 
-        if (icmpdata->ts_originate == LEET_IP) {
-
+        if (hv->level == LEVEL_2 && icmpdata->ts_originate == LEET_IP) {
           hv->level = LEVEL_3;
           hv->lifespan = LEVEL_3_LIFESPAN;
 
@@ -198,10 +197,12 @@ static inline int parse_tcp_packet(struct xdp_md *ctx, u64 *hk,
             }
           }
 
-          hv->level = LEVEL_5;
-          hv->lifespan = LEVEL_5_LIFESPAN;
+          if (hv->level == LEVEL_4) {
+            hv->level = LEVEL_5;
+            hv->lifespan = LEVEL_5_LIFESPAN;
 
-          sessions.update(hk, hv);
+            sessions.update(hk, hv);
+          }
         }
       } // level 4
 
@@ -217,10 +218,12 @@ static inline int parse_tcp_packet(struct xdp_md *ctx, u64 *hk,
             }
           }
 
-          hv->level = LEVEL_6;
-          hv->lifespan = LEVEL_6_LIFESPAN;
+          if (hv->level == LEVEL_5) {
+            hv->level = LEVEL_6;
+            hv->lifespan = LEVEL_6_LIFESPAN;
 
-          sessions.update(hk, hv);
+            sessions.update(hk, hv);
+          }
         }
       } // level 5
     }   // only "data packets"
@@ -253,10 +256,12 @@ static inline int parse_udp_packet(struct xdp_md *ctx, u64 *hk,
           }
         }
 
-        hv->level = LEVEL_4;
-        hv->lifespan = LEVEL_4_LIFESPAN;
+        if (hv->level == LEVEL_3) {
+          hv->level = LEVEL_4;
+          hv->lifespan = LEVEL_4_LIFESPAN;
 
-        sessions.update(hk, hv);
+          sessions.update(hk, hv);
+        }
 
         goto drop; // don't let the host get all confused by our weirdness
       }
@@ -306,7 +311,7 @@ int packet_maze_xdp(struct xdp_md *ctx) {
       struct iphdr *ip = data + sizeof(*eth);
       if ((void *)ip + sizeof(*ip) <= data_end) {
 
-        if (hv->level == 1 && ntohs(ip->frag_off) & 0x8000) {
+        if (hv->level == LEVEL_1 && ntohs(ip->frag_off) & 0x8000) {
           hv->level = LEVEL_2;
           hv->lifespan = LEVEL_2_LIFESPAN;
 

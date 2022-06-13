@@ -225,8 +225,6 @@ if __name__ == "__main__":
                 render_player_table(bpf_sessions, job_progress)
                 cleanup(bpf_sessions, job_progress)
 
-                sleep(0)
-
     except KeyboardInterrupt:
         pass
 
