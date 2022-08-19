@@ -11,12 +11,17 @@ import socket
 
 from argparse import ArgumentParser
 from ctypes import c_int64
+from pathlib import PosixPath
 from os import system
 from sys import exit, argv
 from threading import Thread
 from time import sleep, time
 
-from bcc import BPF
+try:
+    from bcc import BPF
+except ImportError:
+    print("bcc required!\nFind your OS and follow their installation guide:\nhttps://github.com/iovisor/bcc/blob/master/INSTALL.md", flush=True)
+    exit(0)
 
 from rich.live import Live
 from rich.panel import Panel
@@ -132,8 +137,7 @@ def cleanup(bpf_sessions, job_progress):
     return
 
 
-if __name__ == "__main__":
-
+def main():
     parser = ArgumentParser()
 
     parser.add_argument(
@@ -145,7 +149,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args(argv[1:])
 
-    pm_bpf_handle = BPF(src_file="packet_maze.c")
+    pm_bpf_handle = BPF(src_file=str(PosixPath(__file__).parent.joinpath("packet_maze.c")))
 
     pm_bpf_handle.remove_xdp(args.iface, 0)
 
@@ -238,3 +242,6 @@ if __name__ == "__main__":
         pass
 
     exit(0)
+
+if __name__ == "__main__":
+    main()

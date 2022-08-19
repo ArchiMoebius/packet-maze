@@ -28,11 +28,12 @@ If you don't want to run things as sudo - the folloing might work:
 sudo setcap CAP_NET_RAW+ep "$(readlink -f `which python3`)"
 ```
 
-Otherwise, install the Python requirements and start `packet_maze.py`
+Otherwise, install the package and start `packet_maze --iface <iface to listen on>`
 
 ```bash
-sudo python3 -mpip install -r ./requirements.txt
-sudo python3 packet_maze.py --iface eth0
+sudo su -
+pip3 install packet-maze
+packet_maze --iface eth0
 ```
 
 ## Play
